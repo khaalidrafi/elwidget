@@ -1,0 +1,123 @@
+#+TITLE: elwidget — a widget maker for Emacs on Android
+#+STARTUP: showall
+
+Write your Android home-screen widgets in Elisp.  elwidget renders
+widget definitions to JSON spec files; the [[https://github.com/khaalidrafi/emacshell][emacshell]] app (one APK: GNU
+Emacs + a real Unix environment) draws them as native AppWidgets and
+sends taps back to Emacs.  On a plain desktop Emacs the package still
+works — specs are just files — so your widget code is testable
+anywhere.
+
+* Install
+
+Emacs 27.1+, no external packages (json.el is built in):
+
+#+begin_src emacs-lisp
+(add-to-list 'load-path "/path/to/elwidget")
+(require 'elwidget)
+(require 'elwidget-org)           ; built-in Org widgets
+(elwidget-org-register-widgets)
+#+end_src
+
+In emacshell the package ships inside the APK
+(~site-lisp/elwidget/~ on the load-path) — nothing to install.
+
+* Define a widget
+
+#+begin_src emacs-lisp
+(elwidget-define "hello" :size [4 1]
+  :title "Hello widget"
+  :render (lambda ()
+            (list :text "Hello from Elisp!" :size 16 :bold t
+                  :button "Open Emacs" :action "open" :arg "hello"))
+  :on-event (lambda (action arg)
+              (message "tapped %s/%s" action arg)))
+(elwidget-refresh)
+#+end_src
+
+Add the "Emacs Widget 4x1" widget on your home screen; the
+configuration screen lists every spec (here: =hello=, plus the Org
+built-ins).  =(elwidget-start)= begins background service: a tap
+poller (15 s) and periodic re-render (15 min).  On a phone, also:
+
+#+begin_src emacs-lisp
+(add-hook 'focus-in-hook #'elwidget-sync)
+#+end_src
+
+— Emacs is frozen in the background most of the time; one sync on
+focus drains every tap that happened meanwhile.
+
+* The node language
+
+Widget bodies are trees of nodes, one judgment per widget, rendered
+to the constrained Android =RemoteViews= surface (that is why the
+node set is small and there is no arbitrary layout):
+
+| Node | Purpose |
+|---|---|
+| =(:text "..." :size 16 :bold t :color "#RRGGBB" :align 'center)= | a text line |
+| =(:column CHILD...)= / =(:row CHILD...)= | vertical / horizontal stacking |
+| =(:check STATE :action "toggle" :arg "id" :label "..." :color "...")= | big tap target; STATE is =t=, =off=, =skip= or =q= |
+| =(:button "Label" :action "open" :arg "agenda")= | a button |
+| =(:progress :value 3 :max 8 :label "3/8")= | progress bar |
+| =(:bar :height 2 :color "#RRGGBB")= | thin colored rule |
+| =(:gap :height 8)= | vertical space |
+
+=:render= returns either a single node or a LIST of nodes (the widget
+root is a column).  Colors are =#RRGGBB= strings.
+
+** Tap semantics
+
+Taps arrive as events ={"id":N, "spec":"NAME", "action":A,
+"arg":G}=​, queued in =events.jsonl= by the app.  Emacs drains them
+(deduplicated by id, cursor persisted across restarts) and calls the
+widget's =:on-event (ACTION ARG)=; return non-nil to trigger a full
+re-render.  Without a handler, =toggle= events trigger a re-render.
+
+=state.json= is the instant-toggle shadow: your =:state= function
+returns an alist =((arg . value) ...)=; the app flips the shadow value
+the moment the user taps (so the check mark moves even while Emacs is
+frozen), and the next Emacs sync makes the org side authoritative.
+
+* Built-in Org widgets
+
+=(elwidget-org-register-widgets)= defines:
+
+- =org-agenda= — today's scheduled/deadline entries, times + titles;
+- =org-tasks= — open TODO entries; tap the check to =org-todo= it
+  (headings get persistent org-ids on first render);
+- =org-habits= — the [[https://github.com/khaalidrafi/loophabits][loophabits]] habit list, tap-to-check (soft
+  dependency: renders an install hint when loophabits is absent);
+- =org-clock= — the current clock and its duration;
+- =org-table= — a named org table rendered as rows.
+
+Scanning is offline org-element parsing of =elwidget-org-agenda-files=
+(defaults to =org-agenda-files=).
+
+* Files (the Android contract)
+
+Everything lives under =elwidget-dir= (default
+=~/.emacs.d/elwidget/=; the app owns that tree):
+
+| File | Writer | Meaning |
+|---|---|---|
+| =specs/NAME.json= | Emacs | rendered widget |
+| =bindings.json= | app / Emacs | Android widget id → spec name |
+| =state.json= | both | instant-toggle shadow state |
+| =events.jsonl= | app | tap queue, id-deduplicated |
+| =cursor.json= | Emacs | last drained event id |
+
+The app watches the tree (FileObserver) and re-draws within a second
+of a spec change while the app process is alive; Android itself
+re-draws widgets at most every 30 minutes otherwise.
+
+* Development
+
+#+begin_src sh
+make compile    # byte-compile, warnings are errors
+make test       # offline ERT suite
+#+end_src
+
+* License
+
+GPL-3.0-or-later.
