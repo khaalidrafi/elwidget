@@ -1,4 +1,4 @@
-;;; run.el --- eservo test runner -*- lexical-binding: t; -*-
+;;; run.el --- elwidget test runner -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -9,18 +9,18 @@
 
 (require 'ert)
 
-(defvar eservo-test--root
+(defvar elwidget-test--root
   (file-name-as-directory
    (file-name-directory (directory-file-name (file-name-directory load-file-name))))
   "Root directory of the elwidget source tree.")
 
 ;; Package sources first, then tests (so tests can require the package
 ;; files by name).
-(add-to-list 'load-path eservo-test--root)
-(add-to-list 'load-path (expand-file-name "tests" eservo-test--root))
+(add-to-list 'load-path elwidget-test--root)
+(add-to-list 'load-path (expand-file-name "tests" elwidget-test--root))
 
 ;; Every tests/test-*.el file is a test suite; load them all.
-(dolist (file (directory-files (expand-file-name "tests" eservo-test--root)
+(dolist (file (directory-files (expand-file-name "tests" elwidget-test--root)
                                t "test-.*\\.el\\'"))
   (load (file-name-sans-extension file) nil t))
 
