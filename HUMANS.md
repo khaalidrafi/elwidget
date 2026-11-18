@@ -21,8 +21,11 @@ reads. That property is repo law (see AGENTS.md) and the tests
 depend on it.
 
 A second file, `elwidget-org.el`, ships five built-in widgets that
-render Org data (agenda, tasks, habits, clock, table) by offline
-`org-element` parsing of your agenda files.
+render Org data (agenda, tasks, habits, clock, table). They reuse
+existing Org features wherever those exist (Owner order 2026-11-18):
+`org-map-entries` collects entries, `org-time-string-to-absolute`
+decides "due today", `org-id` mints tap ids, `org-table-to-lisp`
+splits tables.
 
 ## Mental model
 
@@ -90,16 +93,17 @@ Everything lives under `elwidget-dir` (default
 | `elwidget-start` / `elwidget-stop` / `elwidget-sync` (437 / 450 / 457) | Timer management and the manual full round. |
 | `elwidget-bind` (466) | Interactive binding of an Android widget id to a spec name in `bindings.json`. |
 | `elwidget--write-json` (156) | Atomic JSON writer (temp file + rename, pretty-printed, UTF-8). |
-| `elwidget-org.el` | The five Org widgets (315 lines). |
-| `elwidget-org--entries-for-today` (73) | Agenda widget: per-file `org-element` scan for scheduled/deadline timestamps that start today, active only, sorted by time string. |
-| `elwidget-org--ensure-id` (137) | Tasks widget: regexp-locate a heading by title, read or create its org-id (saves the file only when creating). |
-| `elwidget-org--tasks-on-event` (187) | Tap handler: `org-id-find` the tapped heading, run `org-todo` on it. |
-| `elwidget-org--habits-render` (202) | Habits widget: delegates to the loophabits package if present, else renders an install hint. |
-| `elwidget-org--clock-render` (217) | Clock widget: reads `org-clock-hd-marker` / `org-clock-start-time` and formats the duration. |
-| `elwidget-org--table-rows` (239) | Table widget: hand-rolled line scanner for a `#+NAME:` table (not org-element). |
-| `elwidget-org-register-widgets` (289) | Defines all five widgets. |
+| `elwidget-org.el` | The five Org widgets (358 lines). |
+| `elwidget-org--collect` (86) | Entry collection, shared by tasks and habits: `org-map-entries` per file (archives skipped), predicate at the headline, title/keyword/doneness from `org-get-heading`/`org-get-todo-state`/`org-entry-is-done-p`, id minted at the entry with `org-id-get-create` (file saved only when minting changed it). |
+| `elwidget-org--timestamp-due-today-p` (117) | Agenda due-today test: `org-time-string-to-absolute` vs `org-today` (cyclic timestamps land on their next occurrence; non-matching diary sexps are skipped via the `org-diary-sexp-no-match` handler). |
+| `elwidget-org--entries-for-today` (134) | Agenda widget: per-file `org-element` scan (the agenda's own collector) keeping active SCHEDULED/DEADLINE timestamps due today, sorted by time string. |
+| `elwidget-org--todo-on-event` (210) | Tap handler for tasks and built-in habits: `org-id-find` the tapped heading, run `org-todo` on it. |
+| `elwidget-org--habits-render` (228) | Habits widget: delegates to the loophabits package if present, else renders Org's own STYLE=habit entries (`org-is-habit-p` from built-in org-habit) with org-todo taps. |
+| `elwidget-org--clock-render` (269) | Clock widget: reads `org-clock-hd-marker` / `org-clock-start-time` and formats the duration. |
+| `elwidget-org--table-rows` (291) | Table widget: `org-element` locates the `#+NAME` (or legacy `#+TBLNAME`) table, `org-table-to-lisp` splits it into rows (its `hline` separators are dropped). |
+| `elwidget-org-register-widgets` (332) | Defines all five widgets. |
 | `tests/run.el` | Batch runner: loads every `tests/test-*.el`, runs all ERT tests, exits 0/1. |
-| `tests/test-elwidget.el`, `tests/test-elwidget-org.el` | 8 + 6 ERT tests; the `with-elwidget-sandbox` macro points `elwidget-dir` at a temp directory. |
+| `tests/test-elwidget.el`, `tests/test-elwidget-org.el` | 8 + 9 ERT tests; the `with-elwidget-sandbox` macro points `elwidget-dir` at a temp directory. |
 
 ## Core algorithms
 
@@ -126,20 +130,30 @@ O(new events); the file is small (taps) and the app owns pruning,
 so no compaction exists in this package.
 
 Agenda scan. `elwidget-org--entries-for-today` opens each agenda
-file in a temp buffer, parses with `org-element`, and keeps
-headlines whose scheduled-or-deadline timestamp is active and
-starts today (comparing year/month/day against `decode-time`).
-Entries sort by the formatted "HH:MM" time string, so untimed
-entries ("----") sort first, before timed ones. That ordering is
-string sort, not chronological for the dash case; it is stable and
-tested as-is.
+file in a temp buffer, parses with `org-element` (the agenda's own
+collector), and keeps headlines whose scheduled-or-deadline
+timestamp is active and due today. "Due today" is Org's arithmetic,
+not ours: `org-time-string-to-absolute` on the timestamp's raw
+value with `org-today` as the reference returns, for a cyclic
+timestamp, the occurrence closest to today -- an exact match means
+today is an occurrence, so repeaters land on their next occurrence
+instead of vanishing after their start date. Diary sexp timestamps
+that do not match today signal `org-diary-sexp-no-match`, which is
+caught and treated as "not today". Entries sort by the formatted
+"HH:MM" time string, so untimed entries ("----") sort first, before
+timed ones. That ordering is string sort, not chronological for the
+dash case; it is stable and tested as-is.
 
-Id minting. `elwidget-org--ensure-id` searches the file for
-`^*+ KEYWORD Title` first, then plain `^*+ Title` (both
-regexp-quoted, end-of-line anchored), reads the heading's `ID`
-property, and only calls `org-id-get-create` (plus `save-buffer`)
-when absent. This keeps taps working across restarts because the
-check node's `:arg` is the heading's org-id.
+Entry collection and id minting. `elwidget-org--collect` visits
+each file with `find-file-noselect` and scans it with
+`org-map-entries` (match nil, scope `file`, archives skipped -- the
+same scanner the agenda uses). At each headline the predicate runs
+with point on the heading, so `org-entry-is-todo-p` and
+`org-is-habit-p` test state and habit-ness directly; the stable tap
+id comes from `org-id-get-create` AT that position -- no
+title-matching, so duplicate titles and keyword changes cannot
+redirect a tap. Files are saved only when an id was actually
+minted (`save-buffer` no-ops otherwise).
 
 ## Invariants and gotchas
 
@@ -160,19 +174,20 @@ check node's `:arg` is the heading's org-id.
   from the `:state` functions only. Any state the app wrote in the
   meantime is discarded by design: Emacs is authoritative after a
   sync.
-- `elwidget-org--ensure-id` matches headings by title regexp, not
-  by position. Two identical titles in one file mean the first
-  match wins for both. TODO keyword changes also change the
-  heading text, which is why it tries the keyword-prefixed pattern
-  first.
-- `org-table` rows are parsed with a hand-rolled line scanner, not
-  org-element. Separator rows (`|---|`) are skipped by the
-  `[-:]` lookahead; anything else org-ish inside tables is not
-  understood.
-- The habits widget is a soft dependency on the loophabits package
-  (same org): missing, it renders an install hint instead of
-  failing. The two functions it calls (`loophabits-toggle`,
-  `loophabits-elwidget-tree`) are only `declare-function`ed here.
+- `elwidget-org--collect` mints org-ids as a side effect of the
+  tasks/habits render (files are saved when that happens). Two
+  identical titles are no longer ambiguous -- the id is bound to the
+  collected entry -- but renders do write to your agenda files the
+  first time each entry is seen. Minting is idempotent afterwards.
+- `org-table` rows are split by `org-table-to-lisp` after
+  `org-element` locates the named table, so `#+NAME`, legacy
+  `#+TBLNAME` and multi-line affiliated keywords all resolve the way
+  Org itself resolves them.
+- The habits widget prefers the loophabits package (same org:
+  shadow state, instant flips) and only falls back to Org's own
+  STYLE=habit entries when it is absent. The two functions it calls
+  (`loophabits-toggle`, `loophabits-elwidget-tree`) are only
+  `declare-function`ed here.
 - `elwidget-dir` must live under `user-emacs-directory` for the
   Android FileObserver to see it (per the `defcustom` docstring).
   On desktop that constraint does not apply, but keep it if you

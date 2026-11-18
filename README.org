@@ -86,13 +86,20 @@ frozen), and the next Emacs sync makes the org side authoritative.
 - =org-agenda= — today's scheduled/deadline entries, times + titles;
 - =org-tasks= — open TODO entries; tap the check to =org-todo= it
   (headings get persistent org-ids on first render);
-- =org-habits= — the [[https://github.com/khaalidrafi/loophabits][loophabits]] habit list, tap-to-check (soft
-  dependency: renders an install hint when loophabits is absent);
+- =org-habits= — the [[https://github.com/khaalidrafi/loophabits][loophabits]] habit list, tap-to-check when that
+  (personal) package is installed; otherwise Org's own =STYLE=habit=
+  entries render with =org-todo= taps (built-in org-habit library,
+  no external package needed);
 - =org-clock= — the current clock and its duration;
 - =org-table= — a named org table rendered as rows.
 
-Scanning is offline org-element parsing of =elwidget-org-agenda-files=
-(defaults to =org-agenda-files=).
+Scanning is offline, over =elwidget-org-agenda-files= (defaults to
+=org-agenda-files=), and reuses existing Org features wherever they
+exist: =org-map-entries= collects entries (the agenda's scanner,
+archives skipped), =org-time-string-to-absolute= + =org-today= decide
+"due today" (repeaters land on their next occurrence), =org-id= mints
+stable tap ids at the collected entry, and =org-table-to-lisp= splits
+tables once =org-element= has located them.
 
 * Files (the Android contract)
 

@@ -81,6 +81,69 @@
      (should (equal '("A" "B") (nth 0 rows)))
      (should (equal '("1" "2") (nth 1 rows))))))
 
+(ert-deftest elwidget-org-agenda-repeater-due-today ()
+  "A cyclic timestamp is due on its next occurrence, not only its start.
+`org-time-string-to-absolute' does the date arithmetic (Owner
+order 2026-11-18: reuse existing Org features)."
+  (with-org-widget-sandbox
+   (ewo--write-org
+    (concat
+     "* Daily chore\n"
+     "SCHEDULED: <2020-01-01 Wed 08:00 +1d>\n"
+     "* Far future cycle\n"
+     "SCHEDULED: <2120-01-01 Wed 07:00 +30d>\n"))
+   (let ((entries (elwidget-org--entries-for-today)))
+     (should (equal 1 (length entries)))
+     (should (equal "08:00" (car (nth 0 entries))))
+     (should (equal "Daily chore" (nth 1 (nth 0 entries)))))))
+
+(ert-deftest elwidget-org-tasks-ids-stable-and-tappable ()
+  "Ids are minted once at the collected entry; an org-todo tap cycles it."
+  (with-org-widget-sandbox
+   (ewo--write-org "* TODO Tap me\n")
+   (let* ((first (elwidget-org--todo-entries))
+          (id (nth 3 (nth 0 first)))
+          (second (elwidget-org--todo-entries)))
+     (should (equal 1 (length first)))
+     (should (stringp id))
+     (should (equal id (nth 3 (nth 0 second))))
+     (should (elwidget-org--todo-on-event "org-todo" id))
+     (should (null (elwidget-org--todo-entries))))))
+
+(ert-deftest elwidget-org-habits-builtin-fallback ()
+  "Without loophabits, STYLE=habit entries render with org-todo taps."
+  (with-org-widget-sandbox
+   (ewo--write-org
+    (concat
+     "* TODO Brush teeth\n"
+     "SCHEDULED: <2020-01-01 Wed +1d>\n"
+     ":PROPERTIES:\n:STYLE: habit\n:END:\n"
+     "* TODO Not a habit\n"))
+   (skip-unless (require 'org-habit nil t))
+   (let ((tree (elwidget-org--habits-render)))
+     (should (cl-some
+              (lambda (n)
+                (and (eq (car n) :row)
+                     (cl-some (lambda (c)
+                                (and (eq (car c) :check)
+                                     (equal "org-todo"
+                                            (plist-get (cddr c) :action))))
+                              (cdr n))))
+              tree))
+     (should (cl-some
+              (lambda (n)
+                (and (eq (car n) :row)
+                     (cl-some (lambda (c)
+                                (and (eq (car c) :text)
+                                     (string-match "Brush" (nth 1 c))))
+                              (cdr n))))
+              tree))
+     (should-not (cl-some
+                  (lambda (n)
+                    (and (eq (car n) :text)
+                         (string-match "loophabits" (nth 1 n))))
+                  tree)))))
+
 (ert-deftest elwidget-org-register-widgets ()
   "Registration defines all five built-ins."
   (with-org-widget-sandbox
