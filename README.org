@@ -85,12 +85,20 @@ frozen), and the next Emacs sync makes the org side authoritative.
 
 - =org-agenda= — today's scheduled/deadline entries, times + titles;
 - =org-tasks= — open TODO entries; tap the check to =org-todo= it
-  (headings get persistent org-ids on first render);
+  (headings get persistent org-ids on first render; the check
+  flips instantly through the shadow state, and Emacs confirms on
+  the next sync);
 - =org-habits= — the [[https://github.com/khaalidrafi/loophabits][loophabits]] habit list, tap-to-check when that
   (personal) package is installed; otherwise Org's own =STYLE=habit=
   entries render with =org-todo= taps (built-in org-habit library,
-  no external package needed);
-- =org-clock= — the current clock and its duration;
+  no external package needed) and the check state is "done today"
+  per the consistency graph's own parser (=org-habit-parse-todo=);
+- =org-clock= — the clock, operable from the home screen: running
+  shows the heading, the live duration and a *Clock out* button;
+  idle offers =org-clock-history='s recent entries as *clock-in*
+  buttons (the top one resumes the last task). Both run Org's own
+  =org-clock-in= / =org-clock-out=, so LOGBOOK and clock tables see
+  them;
 - =org-table= — a named org table rendered as rows.
 
 Scanning is offline, over =elwidget-org-agenda-files= (defaults to
