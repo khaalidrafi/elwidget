@@ -133,5 +133,41 @@
    (should-error (elwidget-define "x" :render "not a function"))
    (should-error (elwidget-define "x" :render (lambda () nil) :size '(4 2)))))
 
+(ert-deftest elwidget-progress-stepper-fields ()
+  "Progress nodes carry action/arg/fmt for the inc/dec steppers."
+  (let ((json (elwidget--tree-to-json
+               '(:progress :value 5 :max 30
+                           :label "5/30 pages"
+                           :fmt "{v}/30 pages"
+                           :action "inc" :arg "Read a book#value"
+                           :color "#7dcfff"))))
+    (should (equal "progress" (cdr (assq 'type json))))
+    (should (equal 5 (cdr (assq 'value json))))
+    (should (equal 30 (cdr (assq 'max json))))
+    (should (equal "5/30 pages" (cdr (assoc "label" json))))
+    (should (equal "{v}/30 pages" (cdr (assoc "fmt" json))))
+    (should (equal "inc" (cdr (assq 'action json))))
+    (should (equal "Read a book#value" (cdr (assq 'arg json))))
+    (should (equal "#7dcfff" (cdr (assoc "color" json))))))
+
+(ert-deftest elwidget-progress-plain-stays-plain ()
+  "A progress node without action/arg/fmt keeps the old shape."
+  (let ((json (elwidget--tree-to-json
+               '(:progress :value 3 :max 8 :label "3/8"))))
+    (should (equal "progress" (cdr (assq 'type json))))
+    (should (not (assq 'action json)))
+    (should (not (assq 'arg json)))
+    (should (not (assq 'fmt json)))))
+
+(ert-deftest elwidget-progress-validates ()
+  "Stepper progress fields are checked, not silently dropped."
+  (should-error (elwidget--tree-to-json
+                 '(:progress :value 1 :max 2 :fmt "no placeholder")))
+  (should-error (elwidget--tree-to-json
+                 '(:progress :value 1 :max 2 :fmt 42)))
+  (should-error (elwidget--tree-to-json
+                 '(:progress :value 1 :max 2 :action 'bogus :arg "x"
+                             :fmt "{v}/{m}"))))
+
 (provide 'test-elwidget)
 ;;; test-elwidget.el ends here

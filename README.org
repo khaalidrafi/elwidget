@@ -59,7 +59,7 @@ node set is small and there is no arbitrary layout):
 | =(:column CHILD...)= / =(:row CHILD...)= | vertical / horizontal stacking |
 | =(:check STATE :action "toggle" :arg "id" :label "..." :color "...")= | big tap target; STATE is =t=, =off=, =skip= or =q= |
 | =(:button "Label" :action "open" :arg "agenda")= | a button |
-| =(:progress :value 3 :max 8 :label "3/8")= | progress bar |
+| =(:progress :value 3 :max 8 :label "3/8" :fmt "{v}/{m}" :action "inc" :arg "id")= | progress bar; with =:action= + =:arg= the bar itself is tappable (typically ="inc"=), and =:fmt= is a label template re-rendered from the shadow state (= {v} = live value, ={m}= = max), so stepper taps move the number while Emacs is frozen |
 | =(:bar :height 2 :color "#RRGGBB")= | thin colored rule |
 | =(:gap :height 8)= | vertical space |
 
@@ -78,6 +78,12 @@ re-render.  Without a handler, =toggle= events trigger a re-render.
 returns an alist =((arg . value) ...)=; the app flips the shadow value
 the moment the user taps (so the check mark moves even while Emacs is
 frozen), and the next Emacs sync makes the org side authoritative.
+For steppers the same file carries numbers: ="toggle"= taps flip the
+arg's value 0 <-> 1, and ="inc"= / ="dec"= taps bump a numeric value
+by one (clamped at zero) — pair them with a =:progress= node carrying
+the same =:arg= plus a =:fmt= label template, and the bar and its
+number move the moment the user taps.  In the template, ={v}= is the
+live value and ={m}= the maximum.
 
 * Built-in Org widgets
 
